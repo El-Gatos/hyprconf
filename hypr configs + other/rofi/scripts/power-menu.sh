@@ -2,7 +2,7 @@
 
 options="⏻ Shutdown\n⏾ Reboot\n⏼ Suspend\n Lock\n Logout"
 
-chosen=$(echo -e "$options" | rofi -dmenu -p "Power Menu" -theme-str 'window {width: 300px;}')
+chosen=$(echo -e "$options" | rofi -dmenu -p "Power Menu")
 
 case $chosen in
     "⏻ Shutdown")
@@ -15,7 +15,7 @@ case $chosen in
         systemctl suspend
         ;;
     " Lock")
-        swaylock
+        hyprctl dispatch exec swaylock
         ;;
     " Logout")
         hyprctl dispatch exit

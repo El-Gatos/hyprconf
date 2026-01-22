@@ -127,3 +127,4 @@ textbox {
     padding: 8px 12px;
     text-color: @fg0;
 }
+
