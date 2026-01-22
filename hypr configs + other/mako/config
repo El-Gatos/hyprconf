@@ -1,0 +1,53 @@
+# Mako - Vaporwave Dreams Configuration
+
+# Position and sizing
+anchor=top-right
+margin=16
+padding=16
+width=350
+height=150
+
+# Appearance
+font=JetBrainsMono Nerd Font 11
+background-color=#1a2847E6
+text-color=#ffb3c6
+border-size=3
+border-color=#ff6b9d
+border-radius=12
+
+# Progress bar
+progress-color=over #4dd0e1
+
+# Icons
+icon-path=/usr/share/icons/Papirus-Dark
+max-icon-size=48
+
+# Behavior
+default-timeout=5000
+ignore-timeout=0
+max-visible=3
+layer=overlay
+
+# Grouping
+group-by=app-name
+
+# Urgency levels
+[urgency=low]
+border-color=#9c4d97
+background-color=#1a2847CC
+
+[urgency=normal]
+border-color=#ff6b9d
+background-color=#1a2847E6
+
+[urgency=critical]
+border-color=#e91e63
+background-color=#2d4a7cF2
+default-timeout=0
+
+# App-specific rules
+[app-name="Spotify"]
+border-color=#4dd0e1
+
+[app-name="Discord"]
+border-color=#9c4d97

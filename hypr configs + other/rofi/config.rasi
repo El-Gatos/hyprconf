@@ -1,0 +1,129 @@
+/* Rofi - Vaporwave Dreams Theme */
+
+* {
+    bg0:     #1a2847E6;
+    bg1:     #2d4a7c;
+    bg2:     #6b3e8f;
+    fg0:     #ffb3c6;
+    fg1:     #ff9eb5;
+    accent:  #ff6b9d;
+    cyan:    #4dd0e1;
+    magenta: #9c4d97;
+    urgent:  #e91e63;
+    
+    background-color: transparent;
+    text-color: @fg0;
+    
+    font: "JetBrainsMono Nerd Font 12";
+}
+
+window {
+    location: center;
+    width: 720px;
+    background-color: @bg0;
+    border: 3px solid;
+    border-color: @accent;
+    border-radius: 16px;
+    padding: 0;
+}
+
+mainbox {
+    spacing: 0;
+    children: [inputbar, listview];
+}
+
+inputbar {
+    padding: 24px 24px 16px 24px;
+    children: [prompt, entry];
+}
+
+prompt {
+    text-color: @cyan;
+    font: "JetBrainsMono Nerd Font Bold 14";
+    padding: 0 16px 0 0;
+}
+
+entry {
+    text-color: @fg0;
+    placeholder: "Search...";
+    placeholder-color: @bg2;
+    cursor: text;
+}
+
+listview {
+    columns: 1;
+    lines: 8;
+    cycle: false;
+    dynamic: true;
+    scrollbar: false;
+    layout: vertical;
+    spacing: 8px;
+    padding: 16px 24px 24px 24px;
+}
+
+element {
+    padding: 12px 16px;
+    border-radius: 12px;
+    orientation: horizontal;
+    children: [element-icon, element-text];
+}
+
+element normal.normal {
+    background-color: transparent;
+    text-color: @fg0;
+}
+
+element alternate.normal {
+    background-color: transparent;
+    text-color: @fg0;
+}
+
+element selected.normal {
+    background-color: @bg1;
+    text-color: @cyan;
+    border: 2px solid;
+    border-color: @accent;
+}
+
+element normal.urgent {
+    background-color: @urgent;
+    text-color: @bg0;
+}
+
+element selected.urgent {
+    background-color: @urgent;
+    text-color: @bg0;
+}
+
+element normal.active {
+    background-color: @magenta;
+    text-color: @bg0;
+}
+
+element selected.active {
+    background-color: @magenta;
+    text-color: @bg0;
+    border-color: @cyan;
+}
+
+element-icon {
+    size: 32px;
+    padding: 0 12px 0 0;
+}
+
+element-text {
+    text-color: inherit;
+    vertical-align: 0.5;
+}
+
+message {
+    padding: 12px;
+    border-radius: 8px;
+    background-color: @bg1;
+    text-color: @fg0;
+}
+
+textbox {
+    padding: 8px 12px;
+    text-color: @fg0;
+}
