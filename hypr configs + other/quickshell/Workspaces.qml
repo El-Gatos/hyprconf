@@ -9,38 +9,33 @@ Rectangle {
     
     required property var screen
     
-    // Get monitor for this screen
+    // FIX 1: Make monitor detection "sticky" so it doesn't break if grimblast steals focus.
+    // We bind to the name, which is constant.
+    property string monitorName: screen.name
+    
     property var monitor: {
-        for (var i = 0; i < Hyprland.monitors.length; i++) {
-            if (Hyprland.monitors[i].name === screen.name) {
-                return Hyprland.monitors[i];
+        var monitors = Hyprland.monitors.values ? Hyprland.monitors.values : Hyprland.monitors
+        for (var i = 0; i < monitors.length; i++) {
+            if (monitors[i].name === monitorName) {
+                return monitors[i];
             }
         }
         return null;
     }
     
-    // Get current active workspace ID
-    property int activeWorkspaceId: monitor && monitor.activeWorkspace ? monitor.activeWorkspace.id : 1
+    property int activeWorkspaceId: monitor && monitor.activeWorkspace 
+        ? monitor.activeWorkspace.id 
+        : 1
     
-    // Total workspaces available
     property int totalWorkspaces: 10
-    
-    // How many to show at once
     property int visibleCount: 5
+    property int itemWidth: 32
+    property int itemHeight: 24
     
-    // Calculate starting workspace to show (to keep active centered)
-    property int startingWorkspace: {
-        var half = Math.floor(visibleCount / 2)
-        var start = activeWorkspaceId - half
-        
-        // Clamp to valid range
-        start = Math.max(1, start)
-        start = Math.min(totalWorkspaces - visibleCount + 1, start)
-        
-        return start
-    }
+    // Spacing between numbers
+    property int spacing: 6
 
-    implicitWidth: workspaceLayout.implicitWidth + 16
+    implicitWidth: (itemWidth * visibleCount) + (spacing * (visibleCount - 1)) + 16
     height: 32
     radius: 10
     
@@ -48,122 +43,103 @@ Rectangle {
     border.width: 2
     border.color: "#4Dff6b9d"
     
-    clip: true
-    
-    Behavior on implicitWidth {
-        NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
-    }
-    
-    Item {
-        anchors.fill: parent
-        anchors.margins: 8
+    clip: true 
+
+    ListView {
+        id: workspaceList
         
-        RowLayout {
-            id: workspaceLayout
-            anchors.verticalCenter: parent.verticalCenter
-            spacing: 6
+        // FIX 2: Layout Fix
+        // Instead of 'fill: parent' (which applies vertical margins and squashes the list),
+        // we center it vertically and only pin the left/right edges.
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        anchors.leftMargin: 8
+        anchors.rightMargin: 8
+        
+        // Explicitly set height to the item height so it doesn't get crushed
+        height: itemHeight
+        
+        orientation: ListView.Horizontal
+        spacing: workspacesContainer.spacing
+        
+        highlightMoveDuration: 450
+        highlightMoveVelocity: -1 
+        highlightRangeMode: ListView.ApplyRange
+        preferredHighlightBegin: (width - itemWidth) / 2
+        preferredHighlightEnd: (width - itemWidth) / 2 + itemWidth
+        boundsBehavior: Flickable.StopAtBounds
+        
+        currentIndex: activeWorkspaceId - 1 
+        interactive: false 
+        
+        model: totalWorkspaces
+        
+        delegate: Rectangle {
+            id: workspace
+            property int workspaceId: index + 1
+            property bool isActive: activeWorkspaceId === workspaceId
+            property bool hasWindows: {
+                var wList = Hyprland.workspaces.values ? Hyprland.workspaces.values : Hyprland.workspaces
+                for (var i = 0; i < wList.length; i++) {
+                    var ws = wList[i]
+                    if (ws.id === workspaceId && ws.windows > 0) return true
+                }
+                return false
+            }
+
+            width: workspacesContainer.itemWidth
+            height: workspacesContainer.itemHeight
+            radius: 8
+
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: workspace.isActive ? "#4Dff6b9d" : "transparent" }
+                GradientStop { position: 1.0; color: workspace.isActive ? "#4D4dd0e1" : "transparent" }
+            }
             
-            Repeater {
-                model: visibleCount
+            border.width: workspace.isActive ? 2 : 0
+            border.color: "#804dd0e1"
+            
+            Behavior on border.width { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+            Behavior on gradient { ColorAnimation { duration: 300 } }
+            
+            Text {
+                anchors.centerIn: parent
+                text: workspaceId
+                font.family: "JetBrainsMono Nerd Font"
+                font.pixelSize: workspace.isActive ? 15 : 14
+                font.weight: workspace.isActive ? Font.Bold : Font.Normal
+                color: workspace.isActive ? "#4dd0e1" : (workspace.hasWindows ? "#9c4d97" : "#6b3e8f")
                 
-                Rectangle {
-                    id: workspace
-                    
-                    property int workspaceId: startingWorkspace + index
-                    property bool isActive: activeWorkspaceId === workspaceId
-                    property bool hasWindows: {
-                        for (var i = 0; i < Hyprland.workspaces.values.length; i++) {
-                            var ws = Hyprland.workspaces.values[i]
-                            if (ws.id === workspaceId && ws.windows > 0) {
-                                return true
-                            }
-                        }
-                        return false
-                    }
-                    
-                    Layout.preferredWidth: 32
-                    Layout.preferredHeight: 24
-                    radius: 8
-                    
-                    gradient: Gradient {
-                        GradientStop { 
-                            position: 0.0
-                            color: workspace.isActive ? "#4Dff6b9d" : "transparent"
-                        }
-                        GradientStop { 
-                            position: 1.0
-                            color: workspace.isActive ? "#4D4dd0e1" : "transparent"
-                        }
-                    }
-                    
-                    border.width: workspace.isActive ? 2 : 0
-                    border.color: "#804dd0e1"
-                    
-                    Behavior on border.width {
-                        NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
-                    }
-                    
-                    Behavior on gradient {
-                        ColorAnimation { duration: 300 }
-                    }
-                    
-                    Text {
-                        anchors.centerIn: parent
-                        text: workspaceId
-                        font.family: "JetBrainsMono Nerd Font"
-                        font.pixelSize: workspace.isActive ? 15 : 14
-                        font.weight: workspace.isActive ? Font.Bold : Font.Normal
-                        color: workspace.isActive ? "#4dd0e1" : (workspace.hasWindows ? "#9c4d97" : "#6b3e8f")
-                        
-                        Behavior on color { 
-                            ColorAnimation { duration: 200 } 
-                        }
-                        
-                        Behavior on font.pixelSize {
-                            NumberAnimation { duration: 200 }
-                        }
-                    }
-                    
-                    MouseArea {
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        
-                        onPressed: workspace.scale = 0.9
-                        onReleased: workspace.scale = 1.1
-                        
-                        onEntered: {
-                            workspace.scale = 1.1
-                            if (!workspace.isActive) {
-                                workspace.border.width = 1
-                                workspace.border.color = "#4Dff6b9d"
-                            }
-                        }
-                        
-                        onExited: {
-                            workspace.scale = 1.0
-                            if (!workspace.isActive) {
-                                workspace.border.width = 0
-                            }
-                        }
-                        
-                        onClicked: {
-                            Hyprland.dispatch("workspace " + workspaceId)
-                        }
-                    }
-                    
-                    Behavior on scale {
-                        NumberAnimation { 
-                            duration: 150
-                            easing.type: Easing.OutBack
-                        }
+                Behavior on color { ColorAnimation { duration: 200 } }
+                Behavior on font.pixelSize { NumberAnimation { duration: 200 } }
+            }
+            
+            MouseArea {
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: Hyprland.dispatch("workspace " + workspaceId)
+                
+                onEntered: {
+                    workspace.scale = 1.1
+                    if (!workspace.isActive) {
+                        workspace.border.width = 1
+                        workspace.border.color = "#4Dff6b9d"
                     }
                 }
+                onExited: {
+                    workspace.scale = 1.0
+                    if (!workspace.isActive) workspace.border.width = 0
+                }
+                onPressed: workspace.scale = 0.9
+                onReleased: workspace.scale = 1.1
             }
+            
+            Behavior on scale { NumberAnimation { duration: 150; easing.type: Easing.OutBack } }
         }
     }
     
-    // Mouse wheel handler for cycling through workspaces
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.NoButton
@@ -171,12 +147,10 @@ Rectangle {
         
         onWheel: function(wheel) {
             if (wheel.angleDelta.y > 0) {
-                // Scroll up - go to previous workspace
                 var prev = activeWorkspaceId - 1
                 if (prev < 1) prev = totalWorkspaces
                 Hyprland.dispatch("workspace " + prev)
             } else if (wheel.angleDelta.y < 0) {
-                // Scroll down - go to next workspace
                 var next = activeWorkspaceId + 1
                 if (next > totalWorkspaces) next = 1
                 Hyprland.dispatch("workspace " + next)
