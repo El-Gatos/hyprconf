@@ -7,6 +7,8 @@ import QtQuick
 import QtQuick.Layouts
 
 ShellRoot {
+    // 1. The Background component (handles wallpapers for all screens)
+    // This sits outside the panel variants because it has its own Variants logic internally.
     Background {}
 
     Variants {
@@ -50,6 +52,8 @@ ShellRoot {
                         
                         Launcher {}
                         
+                        // 2. Pass the specific screen modelData to Workspaces
+                        // This fixes the issue where clicking on one monitor affected the bar on the other
                         Workspaces {
                             screen: modelData
                         }
