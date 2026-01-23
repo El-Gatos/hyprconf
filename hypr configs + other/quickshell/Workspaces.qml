@@ -1,4 +1,3 @@
-// Workspaces.qml
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
@@ -7,6 +6,26 @@ import Quickshell.Hyprland
 Rectangle {
     id: workspacesContainer
     
+    required property var screen
+    
+    // Manual loop to find monitor index because .find() doesn't exist on QML lists
+    property int monitorIndex: {
+        var idx = 0;
+        for (var i = 0; i < Hyprland.monitors.length; i++) {
+            if (Hyprland.monitors[i].name === screen.name) {
+                idx = i;
+                break;
+            }
+        }
+        return idx;
+    }
+
+    property bool isSingleMonitor: Hyprland.monitors.length === 1
+    
+    // Logic: If single monitor, show 10. If multi, show 5 per screen.
+    property int count: isSingleMonitor ? 10 : 5
+    property int startId: isSingleMonitor ? 1 : ((monitorIndex * 5) + 1)
+
     implicitWidth: workspaceLayout.implicitWidth + 16
     height: 32
     radius: 10
@@ -15,27 +34,41 @@ Rectangle {
     border.width: 2
     border.color: "#4Dff6b9d"
     
+    Behavior on implicitWidth {
+        NumberAnimation { duration: 300; easing.type: Easing.OutCubic }
+    }
+    
     RowLayout {
         id: workspaceLayout
         anchors.centerIn: parent
         spacing: 6
         
         Repeater {
-            model: 5
+            model: workspacesContainer.count
             
             Rectangle {
                 id: workspace
                 
-                property int workspaceId: index + 1
-                property bool isActive: Hyprland.focusedMonitor ? (Hyprland.focusedMonitor.activeWorkspace ? Hyprland.focusedMonitor.activeWorkspace.id === workspaceId : false) : false
-                property bool hasWindows: {
-                    for (var i = 0; i < Hyprland.workspaces.values.length; i++) {
-                        var ws = Hyprland.workspaces.values[i]
-                        if (ws.id === workspaceId && ws.windows > 0) {
-                            return true
+                property int workspaceId: workspacesContainer.startId + index
+                
+                // Fix: explicit loop to check active status without .find()
+                property bool isActive: {
+                    var activeId = -1;
+                    // Get the active workspace ID for THIS screen
+                    for (var i = 0; i < Hyprland.monitors.length; i++) {
+                        if (Hyprland.monitors[i].name === screen.name) {
+                            activeId = Hyprland.monitors[i].activeWorkspace.id;
+                            break;
                         }
                     }
-                    return false
+                    return activeId === workspaceId;
+                }
+                
+                // Fix: Check windows using .has() or direct property access if available
+                property bool hasWindows: {
+                    // Hyprland.workspaces is a Map-like object in Quickshell
+                    // We check if the workspace exists in the map
+                    return Hyprland.workspaces.has(workspaceId)
                 }
                 
                 width: 32
@@ -60,40 +93,22 @@ Rectangle {
                     NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
                 }
                 
-                // Glow effect for active workspace
-                Rectangle {
-                    anchors.fill: parent
-                    anchors.margins: -4
-                    radius: parent.radius + 2
-                    color: "transparent"
-                    border.width: workspace.isActive ? 2 : 0
-                    border.color: "#334dd0e1"
-                    opacity: workspace.isActive ? 1 : 0
-                    
-                    Behavior on opacity {
-                        NumberAnimation { duration: 200 }
-                    }
-                }
-                
                 Text {
                     anchors.centerIn: parent
-                    text: {
-                        var icons = ["", "", "", "", ""]
-                        return workspace.isActive ? "" : (workspace.hasWindows ? icons[index] : "")
-                    }
+                    text: workspaceId
                     font.family: "JetBrainsMono Nerd Font"
                     font.pixelSize: 14
                     color: workspace.isActive ? "#4dd0e1" : (workspace.hasWindows ? "#9c4d97" : "#6b3e8f")
-                    
-                    Behavior on color {
-                        ColorAnimation { duration: 200 }
-                    }
+                    Behavior on color { ColorAnimation { duration: 200 } }
                 }
                 
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
+                    
+                    onPressed: workspace.scale = 0.9
+                    onReleased: workspace.scale = 1.1
                     
                     onEntered: {
                         workspace.scale = 1.1
@@ -111,6 +126,8 @@ Rectangle {
                     }
                     
                     onClicked: {
+                        // Standard dispatch. 
+                        // Note: We cast to string to be safe.
                         Hyprland.dispatch("workspace", workspaceId.toString())
                     }
                 }

@@ -7,6 +7,8 @@ import QtQuick
 import QtQuick.Layouts
 
 ShellRoot {
+    Background {}
+
     Variants {
         model: Quickshell.screens
         
@@ -47,7 +49,11 @@ ShellRoot {
                         spacing: 12
                         
                         Launcher {}
-                        Workspaces {}
+                        
+                        Workspaces {
+                            screen: modelData
+                        }
+                        
                         WindowTitle {}
                     }
                     
