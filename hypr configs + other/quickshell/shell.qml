@@ -71,23 +71,22 @@ ShellRoot {
                     PowerMenu { Layout.alignment: Qt.AlignVCenter }
                 }
             }
-        }
-    }
 
+            // Global shortcuts scoped to this panel for reliable access to audioModule
             GlobalShortcut {
-                key: Qt.Key_VolumeUp
+                name: "vol_up"
                 onPressed: audioModule.setVolume(audioModule.internalVolume + 0.05)
             }
 
             GlobalShortcut {
-                key: Qt.Key_VolumeDown
+                name: "vol_down"
                 onPressed: audioModule.setVolume(audioModule.internalVolume - 0.05)
             }
 
             GlobalShortcut {
-                key: Qt.Key_VolumeMute
+                name: "vol_mute"
                 onPressed: audioModule.toggleMute()
             }
-    
-    WorkspaceIndicator {}
+        }
+    }
 }

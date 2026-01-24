@@ -8,10 +8,22 @@ Rectangle {
     
     // --- PIPEWIRE CONNECTION ---
     property var sink: Pipewire.defaultAudioSink
+    property bool sinkValid: false
     
     // Internal volume state to prevent NaN loops
     property real internalVolume: 0.0
     property bool internalMuted: false
+    
+    // Pending write requests (processed by Timer)
+    property real pendingVolume: -1
+    property bool pendingMuteToggle: false
+    property bool skipNextMuteRead: false
+    property int writeRetries: 0
+    
+    // Track what we've written to avoid reverting on bad reads
+    property real lastWrittenVolume: -1
+    property bool lastWrittenMute: false
+    property bool muteWritten: false
     
     // --- SYNC TIMER (The Fix for NaN/Unbound) ---
     // Instead of binding directly to a potentially unstable C++ object,
@@ -22,20 +34,81 @@ Rectangle {
         repeat: true
         triggeredOnStart: true
         onTriggered: {
-            if (!root.sink) return;
-            if (!root.sink.audio) return;
+            // Check if sink is valid; refresh if unbound
+            if (!root.sink || !root.sink.audio) {
+                root.sink = Pipewire.defaultAudioSink;
+                root.sinkValid = false;
+                return;
+            }
             
-            // Safe Read
+            // Verify sink is actually bound before proceeding
+            if (root.sink.id === undefined || String(root.sink.id).includes("unbound")) {
+                console.warn("[Audio] Sink is unbound, refreshing...");
+                root.sink = Pipewire.defaultAudioSink;
+                root.sinkValid = false;
+                return;
+            }
+            
+            root.sinkValid = true;
+            
+            // Process pending writes FIRST (while sink is known-good)
+            if (root.pendingVolume >= 0 && root.sinkValid) {
+                try {
+                    root.sink.audio.volume = root.pendingVolume;
+                    root.lastWrittenVolume = root.pendingVolume;
+                    console.log("[Audio] Volume write queued:", root.pendingVolume);
+                } catch (e) {
+                    console.warn("[Audio] Failed via Quickshell, using pactl fallback:", e);
+                    root.applyVolumeViaDBus(root.pendingVolume);
+                }
+                root.pendingVolume = -1;
+            }
+            
+            if (root.pendingMuteToggle && root.sinkValid) {
+                try {
+                    var oldMute = root.sink.audio.muted;
+                    var newMute = !oldMute;
+                    root.sink.audio.muted = newMute;
+                    root.lastWrittenMute = newMute;
+                    root.muteWritten = true;
+                    console.log("[Audio] Mute toggle queued: was", oldMute, "now", newMute);
+                    root.skipNextMuteRead = true;
+                } catch (e) {
+                    console.warn("[Audio] Failed via Quickshell, using pactl fallback:", e);
+                    root.applyMuteViaDBus(!root.lastWrittenMute);
+                    root.lastWrittenMute = !root.lastWrittenMute;
+                    root.muteWritten = true;
+                }
+                root.pendingMuteToggle = false;
+            }
+            
+            // Delay read by one tick to let Pipewire settle
+            if (root.writeRetries > 0) {
+                root.writeRetries--;
+                return; // Skip read this tick
+            }
+            
+            // Safe Read - but trust our writes over Pipewire's feedback
             var v = root.sink.audio.volume;
             var m = root.sink.audio.muted;
             
-            // Only update if valid number
-            if (v !== undefined && !isNaN(v)) {
+            // Only update volume if we haven't written one this cycle
+            if (root.pendingVolume < 0 && v !== undefined && !isNaN(v)) {
                 root.internalVolume = v;
+                root.lastWrittenVolume = v;
             }
-            if (m !== undefined) {
+            
+            // Only update mute if we haven't just written it
+            if (!root.muteWritten && !root.skipNextMuteRead && m !== undefined) {
                 root.internalMuted = m;
+                root.lastWrittenMute = m;
+            } else if (root.skipNextMuteRead) {
+                // Skip this read, but next time show the written value
+                root.internalMuted = root.lastWrittenMute;
             }
+            
+            root.skipNextMuteRead = false;
+            root.muteWritten = false;
         }
     }
     
@@ -48,31 +121,36 @@ Rectangle {
 
     // --- ACTIONS ---
     function setVolume(val) {
-        if (!sink) return;
-        
-        // Clamp
+        // 1. Clamp logic
         var safeVal = val;
         if (safeVal > 1.0) safeVal = 1.0;
         if (safeVal < 0.0) safeVal = 0.0;
         
-        // WRITE GUARD: Wrap in try/catch to silence "Unbound" errors
-        try {
-            if (sink.audio) {
-                sink.audio.volume = safeVal;
-                // Optimistic update for instant visual feedback
-                root.internalVolume = safeVal; 
-            }
-        } catch (e) {
-            // Ignore unbound errors during initialization
-        }
+        // 2. Optimistic Update (Visuals update instantly)
+        root.internalVolume = safeVal;
+
+        // 3. Queue Write (Timer will apply it when sink is known-good)
+        root.pendingVolume = safeVal;
     }
 
     function toggleMute() {
-        if (!sink || !sink.audio) return;
-        try {
-            sink.audio.muted = !sink.audio.muted;
-            root.internalMuted = !root.internalMuted;
-        } catch (e) {}
+        // Optimistic Update
+        root.internalMuted = !root.internalMuted;
+        
+        // Queue Write (Timer will apply it)
+        root.pendingMuteToggle = true;
+    }
+    
+    // Fallback: use pactl to actually change volume if Quickshell binding fails
+    function applyVolumeViaDBus(volume) {
+        var percent = Math.round(volume * 100);
+        Quickshell.execute(["pactl", "set-sink-volume", "@DEFAULT_SINK@", percent + "%"], false);
+        console.log("[Audio] Applied volume via pactl:", percent + "%");
+    }
+    
+    function applyMuteViaDBus(mute) {
+        Quickshell.execute(["pactl", "set-sink-mute", "@DEFAULT_SINK@", mute ? "1" : "0"], false);
+        console.log("[Audio] Applied mute via pactl:", mute);
     }
     
     // --- UI CONFIGURATION ---
@@ -116,7 +194,6 @@ Rectangle {
         opacity: root.isActive ? 0.8 : 0
         
         gradient: Gradient {
-            orientation: Gradient.Horizontal
             GradientStop { position: 0.0; color: "#ff6b9d" }
             GradientStop { position: 1.0; color: "#4dd0e1" }
         }
@@ -191,16 +268,16 @@ Rectangle {
             root.setVolume(pct);
         }
 
-        onPositionChanged: (mouse) => {
-            if (pressed) handleMouse(mouse);
+        onPositionChanged: function(mouse) {
+            if (mouseArea.pressed) handleMouse(mouse);
         }
         
-        onPressed: (mouse) => {
+        onPressed: function(mouse) {
             if (mouse.button === Qt.LeftButton) handleMouse(mouse);
-            if (mouse.button === Qt.MiddleButton) root.toggleMute();
+            if (mouse.button === Qt.MiddleButton || mouse.button === Qt.RightButton) root.toggleMute();
         }
         
-        onWheel: (wheel) => {
+        onWheel: function(wheel) {
             var step = wheel.angleDelta.y > 0 ? 0.05 : -0.05;
             root.setVolume(root.internalVolume + step);
         }
