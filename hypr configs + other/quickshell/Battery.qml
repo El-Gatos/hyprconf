@@ -6,7 +6,7 @@ import Quickshell.Services.UPower
 Rectangle {
     id: battery
     
-    property var upower: UPower.devices.find(d => d.type === UPower.DeviceType.Battery)
+    property var upower: Upower.displayDevice
     property real percentage: upower ? upower.percentage : 0
     property bool charging: upower ? upower.state === UPower.DeviceState.Charging : false
     

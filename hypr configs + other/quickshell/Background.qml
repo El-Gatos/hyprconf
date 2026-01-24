@@ -9,6 +9,8 @@ Variants {
         property var modelData
         screen: modelData
 
+        exclusionMode: ExclusionMode.Ignore
+
         // 1. Anchors are boolean flags in Quickshell, not a geometry object
         anchors {
             top: true
