@@ -1,113 +1,78 @@
-// Audio.qml - CLI MODE (Debug & Ruthless Parsing)
+// Audio.qml - DEFENSIVE SYNC VERSION
 import QtQuick
-import QtQuick.Layouts
 import Quickshell
-import Quickshell.Io
+import Quickshell.Services.Pipewire
 
 Rectangle {
     id: root
     
-    // --- INTERNAL STATE ---
-    property real volume: 0.0
-    property bool muted: false
+    // --- PIPEWIRE CONNECTION ---
+    property var sink: Pipewire.defaultAudioSink
     
-    // --- LAYOUT STATE ---
-    property bool hovered: mouseArea.containsMouse
-    property bool dragging: mouseArea.pressed
-    property bool isActive: hovered || dragging
+    // Internal volume state to prevent NaN loops
+    property real internalVolume: 0.0
+    property bool internalMuted: false
     
-    // --- POLLING LOGIC ---
-    // We poll the system constantly. This ensures that if you change volume
-    // via keyboard or another app, this pill updates to match.
+    // --- SYNC TIMER (The Fix for NaN/Unbound) ---
+    // Instead of binding directly to a potentially unstable C++ object,
+    // we poll the object state safely. This prevents the "Unbound" crashes.
     Timer {
-        interval: 300 // Check every 300ms
-        running: true 
+        interval: 100 // 100ms is fast enough for UI, slow enough to be safe
+        running: true
         repeat: true
         triggeredOnStart: true
         onTriggered: {
-            // Don't poll while dragging OR if the previous poll is still stuck
-            if (!root.dragging && !pollProc.running) {
-                pollProc.running = true
+            if (!root.sink) return;
+            if (!root.sink.audio) return;
+            
+            // Safe Read
+            var v = root.sink.audio.volume;
+            var m = root.sink.audio.muted;
+            
+            // Only update if valid number
+            if (v !== undefined && !isNaN(v)) {
+                root.internalVolume = v;
+            }
+            if (m !== undefined) {
+                root.internalMuted = m;
             }
         }
-    }
-
-    Process {
-        id: pollProc
-        command: ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]
-        onStdoutChanged: {
-            var out = pollProc.stdout.toString().trim()
-            // If wpctl returns nothing (some systems use pactl), try pactl as a fallback
-            if (!out) {
-                pollAlt.running = true
-                return
-            }
-            
-            // DEBUG: Uncomment this if it still fails to see what wpctl returns
-            // console.log("[AudioPoll] Raw output: '" + out + "'")
-            
-            // RUTHLESS PARSING:
-            // Find the first sequence of numbers with a dot or comma.
-            // Ignore "Volume:" text entirely.
-            // Matches: "0.45", "Volume: 0.45", "Vol: 0,45", etc.
-            var matches = out.match(/(\d+[.,]\d+)/g)
-
-            if (matches && matches.length > 0) {
-                // Use the latest parsed value in case stdout accumulates
-                var valStr = matches[matches.length - 1].replace(',', '.')
-                var newVol = parseFloat(valStr)
-                
-                // Only update if valid and changed
-                if (!isNaN(newVol) && Math.abs(newVol - root.volume) > 0.01) {
-                    // console.log("[AudioPoll] Syncing volume: " + newVol)
-                    root.volume = newVol
-                }
-            }
-            
-            var isMuted = out.includes("[MUTED]")
-            if (root.muted !== isMuted) root.muted = isMuted
-        }
-    }
-
-    // Fallback for systems where `pactl` updates volume (e.g., PulseAudio compatibility)
-    Process {
-        id: pollAlt
-        command: ["pactl", "get-sink-volume", "@DEFAULT_SINK@"]
-        onStdoutChanged: {
-            var out = pollAlt.stdout.toString().trim()
-            if (!out) return
-
-            // Parse last percentage found, e.g. "Front Left: 65536 / 100% / 0.00 dB"
-            var matches = out.match(/(\d+)%/g)
-            if (matches && matches.length > 0) {
-                var last = matches[matches.length - 1].replace('%','')
-                var newVol = parseFloat(last) / 100.0
-                if (!isNaN(newVol) && Math.abs(newVol - root.volume) > 0.01) {
-                    root.volume = newVol
-                }
-            }
-        }
-    }
-
-    // --- COMMAND EXECUTION ---
-    function setVolume(val) {
-        // Optimistic update
-        root.volume = val
-        // Send to system
-        setVolProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", val.toFixed(2)]
-        setVolProc.running = true
     }
     
-    Process { id: setVolProc }
+    // --- UI STATE ---
+    property bool hovered: mouseArea.containsMouse
+    property bool dragging: mouseArea.pressed
+    property bool isActive: hovered || dragging
+
+    Component.onCompleted: console.log("[Audio] Defensive Module Loaded.")
+
+    // --- ACTIONS ---
+    function setVolume(val) {
+        if (!sink) return;
+        
+        // Clamp
+        var safeVal = val;
+        if (safeVal > 1.0) safeVal = 1.0;
+        if (safeVal < 0.0) safeVal = 0.0;
+        
+        // WRITE GUARD: Wrap in try/catch to silence "Unbound" errors
+        try {
+            if (sink.audio) {
+                sink.audio.volume = safeVal;
+                // Optimistic update for instant visual feedback
+                root.internalVolume = safeVal; 
+            }
+        } catch (e) {
+            // Ignore unbound errors during initialization
+        }
+    }
 
     function toggleMute() {
-        root.muted = !root.muted
-        muteProc.running = true
-    }
-    
-    Process { 
-        id: muteProc 
-        command: ["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"] 
+        if (!sink || !sink.audio) return;
+        try {
+            sink.audio.muted = !sink.audio.muted;
+            root.internalMuted = !root.internalMuted;
+        } catch (e) {}
     }
     
     // --- UI CONFIGURATION ---
@@ -119,6 +84,9 @@ Rectangle {
     height: 32
     radius: 16
     
+    // Clips content so the slider doesn't spill out
+    clip: true
+    
     color: "#B31a2847"
     border.width: 2
     border.color: isActive ? "#66ff6b9d" : "#4Dff6b9d"
@@ -129,17 +97,20 @@ Rectangle {
     // --- VOLUME BAR ---
     Rectangle {
         id: volBar
+        // Anchor to left, top, bottom.
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
         anchors.margins: 2
         radius: 14
         
-        // Pure math binding
+        // Z-Index 0: Background layer
+        z: 0
+        
         width: {
-            var maxW = parent.width - 4
-            var calc = maxW * root.volume
-            return Math.max(0, calc)
+            var maxW = parent.width - 4;
+            var calc = maxW * root.internalVolume;
+            return Math.max(0, calc);
         }
         
         opacity: root.isActive ? 0.8 : 0
@@ -150,7 +121,6 @@ Rectangle {
             GradientStop { position: 1.0; color: "#4dd0e1" }
         }
         
-        // Smooth animation when polling (keys), instant update when dragging (mouse)
         Behavior on width {
             enabled: !root.dragging
             NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
@@ -158,33 +128,44 @@ Rectangle {
         Behavior on opacity { NumberAnimation { duration: 200 } }
     }
 
-    // --- ICON ---
+    // --- ICON (Head) ---
     Item {
+        id: iconContainer
         width: 32
         height: 32
+        
+        // Z-Index 1: Sits on top of the bar
+        z: 1
+        
+        // STRICT ANCHORING: Always on the left edge
         anchors.left: parent.left
         anchors.top: parent.top
         
         Text {
             anchors.centerIn: parent
             text: {
-                if (root.muted) return "󰝟"
-                if (root.volume >= 0.66) return "󰕾"
-                if (root.volume >= 0.33) return "󰖀"
-                return "󰕿"
+                if (root.internalMuted) return "\uf026";
+                if (root.internalVolume >= 0.66) return "\uf028";
+                if (root.internalVolume >= 0.33) return "\uf027";
+                return "\uf026";
             }
             font.family: "JetBrainsMono Nerd Font"
             font.pixelSize: 16
-            color: root.muted ? "#ff6b9d" : "#4dd0e1"
+            color: (root.internalMuted) ? "#ff6b9d" : "#4dd0e1"
         }
     }
 
     // --- PERCENTAGE TEXT ---
     Text {
+        // Z-Index 1: Sits on top of the bar
+        z: 1
+        
+        // STRICT ANCHORING: Always on the right edge
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        text: Math.round(root.volume * 100) + "%"
+        
+        text: Math.round(root.internalVolume * 100) + "%"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 12
         font.bold: true
@@ -204,35 +185,24 @@ Rectangle {
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         
         function handleMouse(mouse) {
-            var pct = mouse.x / width
+            var pct = mouse.x / width;
             if (pct < 0) pct = 0; 
-            if (pct > 1) pct = 1;
-            setVolume(pct)
+            if (pct > 1) pct = 1.0; // Fixed: Added the literal and semicolon
+            root.setVolume(pct);
+        }
+
+        onPositionChanged: (mouse) => {
+            if (pressed) handleMouse(mouse);
         }
         
-        onPressed: (mouse) => { 
-            if (mouse.button === Qt.LeftButton) handleMouse(mouse) 
-        }
-        
-        onPositionChanged: (mouse) => { 
-            if (mouse.buttons & Qt.LeftButton) handleMouse(mouse) 
+        onPressed: (mouse) => {
+            if (mouse.button === Qt.LeftButton) handleMouse(mouse);
+            if (mouse.button === Qt.MiddleButton) root.toggleMute();
         }
         
         onWheel: (wheel) => {
-            var step = 0.05
-            if (wheel.angleDelta.y < 0) step = -step
-            var newVol = root.volume + step
-            if (newVol < 0) newVol = 0; 
-            if (newVol > 1) newVol = 1;
-            setVolume(newVol)
-        }
-
-        onClicked: (mouse) => {
-            if (mouse.button === Qt.RightButton) {
-                toggleMute()
-            } else if (mouse.button === Qt.MiddleButton) {
-                Process.run(["pavucontrol"])
-            }
+            var step = wheel.angleDelta.y > 0 ? 0.05 : -0.05;
+            root.setVolume(root.internalVolume + step);
         }
     }
 }

@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Wayland
 import QtQuick
+import Quickshell.Hyprland
 import QtQuick.Layouts
 
 ShellRoot {
@@ -68,6 +69,21 @@ ShellRoot {
                 }
             }
         }
+    }
+
+    GlobalShortcut {
+        key: Qt.Key_VolumeUp
+        onActivated: audioModule.setVolume(audioModule.internalVolume + 0.05)
+    }
+
+    GlobalShortcut {
+        key: Qt.Key_VolumeDown
+        onActivated: audioModule.setVolume(audioModule.internalVolume - 0.05)
+    }
+
+    GlobalShortcut {
+        key: Qt.Key_VolumeMute
+        onActivated: audioModule.toggleMute()
     }
     
     WorkspaceIndicator {}
