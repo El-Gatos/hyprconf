@@ -1,55 +1,96 @@
-// Audio.qml - Force Sink Detection
+// Audio.qml - CLI MODE (Debug & Ruthless Parsing)
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import Quickshell.Services.Pipewire
+import Quickshell.Io
 
 Rectangle {
     id: root
     
-    // --- SINK HUNTING LOGIC ---
-    property var sink: Pipewire.defaultSink
+    // --- INTERNAL STATE ---
+    property real volume: 0.0
+    property bool muted: false
     
-    // Timer to hunt for a sink if we don't have one
-    Timer {
-        interval: 1000
-        running: !root.sink
-        repeat: true
-        onTriggered: {
-            if (Pipewire.defaultSink) {
-                root.sink = Pipewire.defaultSink
-                return
-            }
-            
-            // Manual Scan
-            var nodes = Pipewire.nodes.values
-            for (var i = 0; i < nodes.length; i++) {
-                var n = nodes[i]
-                // Look for a node that has volume and isn't a microphone (if possible)
-                // We check if volume is defined.
-                if (n.volume !== undefined) {
-                    console.log("Force-picked sink: " + (n.description || n.id))
-                    root.sink = n
-                    return
-                }
-            }
-        }
-    }
-
-    // --- PROPERTIES ---
-    property real volume: sink ? sink.volume : 0
-    property bool muted: sink ? sink.muted : false
-    
-    // Interaction State
+    // --- LAYOUT STATE ---
     property bool hovered: mouseArea.containsMouse
     property bool dragging: mouseArea.pressed
     property bool isActive: hovered || dragging
     
-    // --- LAYOUT ---
-    implicitWidth: width 
+    // --- POLLING LOGIC ---
+    // We poll the system constantly. This ensures that if you change volume
+    // via keyboard or another app, this pill updates to match.
+    Timer {
+        interval: 300 // Check every 300ms
+        running: true 
+        repeat: true
+        triggeredOnStart: true
+        onTriggered: {
+            // Don't poll while dragging OR if the previous poll is still stuck
+            if (!root.dragging && !pollProc.running) {
+                pollProc.running = true
+            }
+        }
+    }
+
+    Process {
+        id: pollProc
+        command: ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]
+        onStdoutChanged: {
+            var out = pollProc.stdout.toString().trim()
+            if (!out) return
+            
+            // DEBUG: Uncomment this if it still fails to see what wpctl returns
+            // console.log("[AudioPoll] Raw output: '" + out + "'")
+            
+            // RUTHLESS PARSING:
+            // Find the first sequence of numbers with a dot or comma.
+            // Ignore "Volume:" text entirely.
+            // Matches: "0.45", "Volume: 0.45", "Vol: 0,45", etc.
+            var match = out.match(/(\d+[.,]\d+)/)
+            
+            if (match) {
+                // Replace comma with dot for JS float safety
+                var valStr = match[1].replace(',', '.')
+                var newVol = parseFloat(valStr)
+                
+                // Only update if valid and changed
+                if (!isNaN(newVol) && Math.abs(newVol - root.volume) > 0.01) {
+                    // console.log("[AudioPoll] Syncing volume: " + newVol)
+                    root.volume = newVol
+                }
+            }
+            
+            var isMuted = out.includes("[MUTED]")
+            if (root.muted !== isMuted) root.muted = isMuted
+        }
+    }
+
+    // --- COMMAND EXECUTION ---
+    function setVolume(val) {
+        // Optimistic update
+        root.volume = val
+        // Send to system
+        setVolProc.command = ["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@", val.toFixed(2)]
+        setVolProc.running = true
+    }
+    
+    Process { id: setVolProc }
+
+    function toggleMute() {
+        root.muted = !root.muted
+        muteProc.running = true
+    }
+    
+    Process { 
+        id: muteProc 
+        command: ["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"] 
+    }
+    
+    // --- UI CONFIGURATION ---
+    implicitWidth: width
     implicitHeight: 32
     
-    // Expand if active
+    // Animation logic
     width: isActive ? 150 : 32
     height: 32
     radius: 16
@@ -70,10 +111,13 @@ Rectangle {
         anchors.margins: 2
         radius: 14
         
-        // Calculate width safely
-        width: (parent.width - 4) * root.volume
+        // Pure math binding
+        width: {
+            var maxW = parent.width - 4
+            var calc = maxW * root.volume
+            return Math.max(0, calc)
+        }
         
-        // Only show when active
         opacity: root.isActive ? 0.8 : 0
         
         gradient: Gradient {
@@ -82,7 +126,11 @@ Rectangle {
             GradientStop { position: 1.0; color: "#4dd0e1" }
         }
         
-        Behavior on width { NumberAnimation { duration: root.dragging ? 20 : 100 } }
+        // Smooth animation when polling (keys), instant update when dragging (mouse)
+        Behavior on width {
+            enabled: !root.dragging
+            NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
+        }
         Behavior on opacity { NumberAnimation { duration: 200 } }
     }
 
@@ -106,13 +154,12 @@ Rectangle {
             color: root.muted ? "#ff6b9d" : "#4dd0e1"
         }
     }
-    
+
     // --- PERCENTAGE TEXT ---
     Text {
         anchors.right: parent.right
         anchors.rightMargin: 12
         anchors.verticalCenter: parent.verticalCenter
-        
         text: Math.round(root.volume * 100) + "%"
         font.family: "JetBrainsMono Nerd Font"
         font.pixelSize: 12
@@ -132,43 +179,35 @@ Rectangle {
         hoverEnabled: true
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         
-        function setVolume(mouseX) {
-            if (root.sink) {
-                var pct = mouseX / root.width
-                if (pct < 0) pct = 0
-                if (pct > 1) pct = 1
-                root.sink.volume = pct
-            }
-        }
-
-        onPressed: function(mouse) {
-            if (mouse.button === Qt.LeftButton) setVolume(mouse.x)
-        }
-
-        onPositionChanged: function(mouse) {
-            if (mouse.buttons & Qt.LeftButton) setVolume(mouse.x)
-        }
-
-        onClicked: function(mouse) {
-            if (!root.sink) return
-            
-            if (mouse.button === Qt.RightButton) {
-                root.sink.muted = !root.sink.muted
-            } else if (mouse.button === Qt.MiddleButton) {
-                Quickshell.Process.run("pavucontrol")
-            }
+        function handleMouse(mouse) {
+            var pct = mouse.x / width
+            if (pct < 0) pct = 0; 
+            if (pct > 1) pct = 1;
+            setVolume(pct)
         }
         
-        onWheel: function(wheel) {
-            if (root.sink) {
-                var step = 0.05
-                if (wheel.angleDelta.y < 0) step = -step
-                var newVol = root.sink.volume + step
-                
-                if (newVol < 0) newVol = 0
-                if (newVol > 1) newVol = 1
-                
-                root.sink.volume = newVol
+        onPressed: (mouse) => { 
+            if (mouse.button === Qt.LeftButton) handleMouse(mouse) 
+        }
+        
+        onPositionChanged: (mouse) => { 
+            if (mouse.buttons & Qt.LeftButton) handleMouse(mouse) 
+        }
+        
+        onWheel: (wheel) => {
+            var step = 0.05
+            if (wheel.angleDelta.y < 0) step = -step
+            var newVol = root.volume + step
+            if (newVol < 0) newVol = 0; 
+            if (newVol > 1) newVol = 1;
+            setVolume(newVol)
+        }
+
+        onClicked: (mouse) => {
+            if (mouse.button === Qt.RightButton) {
+                toggleMute()
+            } else if (mouse.button === Qt.MiddleButton) {
+                Process.run(["pavucontrol"])
             }
         }
     }
