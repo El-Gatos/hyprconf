@@ -1,7 +1,8 @@
-// Audio.qml
+// Audio.qml - FIXED
 import QtQuick
 import Quickshell
 import Quickshell.Services.Pipewire
+import Quickshell.Io
 
 Rectangle {
     id: audio
@@ -65,6 +66,13 @@ Rectangle {
         }
     }
     
+    // FIX: Use Process instead of Quickshell.Process
+    Process {
+        id: pavucontrolProcess
+        running: false
+        command: ["pavucontrol"]
+    }
+    
     MouseArea {
         id: mouseArea
         anchors.fill: parent
@@ -74,7 +82,8 @@ Rectangle {
         
         onClicked: function(mouse) {
             if (mouse.button === Qt.LeftButton) {
-                Quickshell.Process.run("pavucontrol")
+                // FIX: Use the Process object instead of Quickshell.Process.run
+                pavucontrolProcess.running = true
             } else if (mouse.button === Qt.RightButton) {
                 if (Pipewire.defaultSink) {
                     Pipewire.defaultSink.muted = !Pipewire.defaultSink.muted

@@ -1,7 +1,10 @@
-// PowerMenu.qml
+// ========================================
+// PowerMenu.qml - FIXED
+// ========================================
 import QtQuick
 import QtQuick.Controls
 import Quickshell
+import Quickshell.Io
 
 Rectangle {
     id: powerMenu
@@ -34,6 +37,12 @@ Rectangle {
         }
     }
     
+    Process {
+        id: powerMenuProcess
+        running: false
+        command: ["rofi", "-show", "power-menu", "-modi", "power-menu:~/.config/rofi/scripts/power-menu.sh"]
+    }
+    
     MouseArea {
         id: mouseArea
         anchors.fill: parent
@@ -43,10 +52,7 @@ Rectangle {
         onClicked: {
             powerMenu.scale = 0.9
             scaleAnimation.start()
-            Quickshell.Process.run("rofi", [
-                "-show", "power-menu", 
-                "-modi", "power-menu:~/.config/rofi/scripts/power-menu.sh"
-            ])
+            powerMenuProcess.running = true
         }
     }
     

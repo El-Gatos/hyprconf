@@ -1,8 +1,9 @@
-// Launcher.qml
+// Launcher.qml - FIXED
 import QtQuick
 import QtQuick.Controls
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Io
 
 Rectangle {
     id: launcher
@@ -35,6 +36,12 @@ Rectangle {
         }
     }
     
+    Process {
+        id: rofiProcess
+        running: false
+        command: ["rofi", "-show", "drun"]
+    }
+    
     MouseArea {
         id: mouseArea
         anchors.fill: parent
@@ -44,7 +51,7 @@ Rectangle {
         onClicked: {
             launcher.scale = 0.9
             scaleAnimation.start()
-            Quickshell.Process.run("rofi", ["-show", "drun"])
+            rofiProcess.running = true
         }
     }
     
@@ -59,4 +66,3 @@ Rectangle {
         }
     }
 }
-
