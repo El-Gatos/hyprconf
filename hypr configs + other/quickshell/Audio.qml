@@ -1,109 +1,175 @@
-// Audio.qml - FIXED
+// Audio.qml - Force Sink Detection
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
 import Quickshell.Services.Pipewire
-import Quickshell.Io
 
 Rectangle {
-    id: audio
+    id: root
     
-    property real volume: Pipewire.defaultSink ? Pipewire.defaultSink.volume : 0
-    property bool muted: Pipewire.defaultSink ? Pipewire.defaultSink.muted : false
+    // --- SINK HUNTING LOGIC ---
+    property var sink: Pipewire.defaultSink
     
-    implicitWidth: audioLayout.implicitWidth + 24
+    // Timer to hunt for a sink if we don't have one
+    Timer {
+        interval: 1000
+        running: !root.sink
+        repeat: true
+        onTriggered: {
+            if (Pipewire.defaultSink) {
+                root.sink = Pipewire.defaultSink
+                return
+            }
+            
+            // Manual Scan
+            var nodes = Pipewire.nodes.values
+            for (var i = 0; i < nodes.length; i++) {
+                var n = nodes[i]
+                // Look for a node that has volume and isn't a microphone (if possible)
+                // We check if volume is defined.
+                if (n.volume !== undefined) {
+                    console.log("Force-picked sink: " + (n.description || n.id))
+                    root.sink = n
+                    return
+                }
+            }
+        }
+    }
+
+    // --- PROPERTIES ---
+    property real volume: sink ? sink.volume : 0
+    property bool muted: sink ? sink.muted : false
+    
+    // Interaction State
+    property bool hovered: mouseArea.containsMouse
+    property bool dragging: mouseArea.pressed
+    property bool isActive: hovered || dragging
+    
+    // --- LAYOUT ---
+    implicitWidth: width 
+    implicitHeight: 32
+    
+    // Expand if active
+    width: isActive ? 150 : 32
     height: 32
-    radius: 10
+    radius: 16
     
     color: "#B31a2847"
     border.width: 2
-    border.color: mouseArea.containsMouse ? "#664dd0e1" : "#4D4dd0e1"
+    border.color: isActive ? "#66ff6b9d" : "#4Dff6b9d"
     
-    Behavior on border.color {
-        ColorAnimation { duration: 200 }
+    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+    Behavior on border.color { ColorAnimation { duration: 200 } }
+
+    // --- VOLUME BAR ---
+    Rectangle {
+        id: volBar
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.margins: 2
+        radius: 14
+        
+        // Calculate width safely
+        width: (parent.width - 4) * root.volume
+        
+        // Only show when active
+        opacity: root.isActive ? 0.8 : 0
+        
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop { position: 0.0; color: "#ff6b9d" }
+            GradientStop { position: 1.0; color: "#4dd0e1" }
+        }
+        
+        Behavior on width { NumberAnimation { duration: root.dragging ? 20 : 100 } }
+        Behavior on opacity { NumberAnimation { duration: 200 } }
     }
-    
-    Row {
-        id: audioLayout
-        anchors.centerIn: parent
-        spacing: 8
+
+    // --- ICON ---
+    Item {
+        width: 32
+        height: 32
+        anchors.left: parent.left
+        anchors.top: parent.top
         
         Text {
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.centerIn: parent
             text: {
-                if (audio.muted) return "󰝟"
-                if (audio.volume > 0.66) return ""
-                if (audio.volume > 0.33) return ""
-                return ""
+                if (root.muted) return "󰝟"
+                if (root.volume >= 0.66) return "󰕾"
+                if (root.volume >= 0.33) return "󰖀"
+                return "󰕿"
             }
             font.family: "JetBrainsMono Nerd Font"
             font.pixelSize: 16
-            color: audio.muted ? "#ff6b9d" : "#4dd0e1"
-            
-            Behavior on color {
-                ColorAnimation { duration: 200 }
-            }
-            
-            // Pulse animation when unmuted and sound is playing
-            SequentialAnimation on scale {
-                running: !audio.muted && audio.volume > 0
-                loops: Animation.Infinite
-                NumberAnimation { to: 1.2; duration: 300 }
-                NumberAnimation { to: 1.0; duration: 300 }
-            }
+            color: root.muted ? "#ff6b9d" : "#4dd0e1"
         }
+    }
+    
+    // --- PERCENTAGE TEXT ---
+    Text {
+        anchors.right: parent.right
+        anchors.rightMargin: 12
+        anchors.verticalCenter: parent.verticalCenter
         
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: audio.muted ? "Muted" : Math.round(audio.volume * 100) + "%"
-            font.family: "JetBrainsMono Nerd Font"
-            font.pixelSize: 12
-            color: "#ffb3c6"
-            opacity: audio.muted ? 0.6 : 1.0
-            
-            Behavior on opacity {
-                NumberAnimation { duration: 200 }
-            }
-        }
+        text: Math.round(root.volume * 100) + "%"
+        font.family: "JetBrainsMono Nerd Font"
+        font.pixelSize: 12
+        font.bold: true
+        color: "#ffffff"
+        style: Text.Outline; styleColor: "#1a2847"
+        
+        visible: root.isActive
+        opacity: visible ? 1.0 : 0.0
+        Behavior on opacity { NumberAnimation { duration: 200 } }
     }
-    
-    // FIX: Use Process instead of Quickshell.Process
-    Process {
-        id: pavucontrolProcess
-        running: false
-        command: ["pavucontrol"]
-    }
-    
+
+    // --- MOUSE CONTROL ---
     MouseArea {
         id: mouseArea
         anchors.fill: parent
         hoverEnabled: true
-        cursorShape: Qt.PointingHandCursor
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         
+        function setVolume(mouseX) {
+            if (root.sink) {
+                var pct = mouseX / root.width
+                if (pct < 0) pct = 0
+                if (pct > 1) pct = 1
+                root.sink.volume = pct
+            }
+        }
+
+        onPressed: function(mouse) {
+            if (mouse.button === Qt.LeftButton) setVolume(mouse.x)
+        }
+
+        onPositionChanged: function(mouse) {
+            if (mouse.buttons & Qt.LeftButton) setVolume(mouse.x)
+        }
+
         onClicked: function(mouse) {
-            if (mouse.button === Qt.LeftButton) {
-                // FIX: Use the Process object instead of Quickshell.Process.run
-                pavucontrolProcess.running = true
-            } else if (mouse.button === Qt.RightButton) {
-                if (Pipewire.defaultSink) {
-                    Pipewire.defaultSink.muted = !Pipewire.defaultSink.muted
-                }
+            if (!root.sink) return
+            
+            if (mouse.button === Qt.RightButton) {
+                root.sink.muted = !root.sink.muted
+            } else if (mouse.button === Qt.MiddleButton) {
+                Quickshell.Process.run("pavucontrol")
             }
         }
         
         onWheel: function(wheel) {
-            if (Pipewire.defaultSink) {
-                var delta = wheel.angleDelta.y / 120 * 0.05
-                var newVolume = Math.max(0, Math.min(1, Pipewire.defaultSink.volume + delta))
-                Pipewire.defaultSink.volume = newVolume
+            if (root.sink) {
+                var step = 0.05
+                if (wheel.angleDelta.y < 0) step = -step
+                var newVol = root.sink.volume + step
+                
+                if (newVol < 0) newVol = 0
+                if (newVol > 1) newVol = 1
+                
+                root.sink.volume = newVol
             }
-        }
-    }
-    
-    Behavior on scale {
-        NumberAnimation {
-            duration: 150
-            easing.type: Easing.OutBack
         }
     }
 }
