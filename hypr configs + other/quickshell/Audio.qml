@@ -46,11 +46,11 @@ Rectangle {
             // Find the first sequence of numbers with a dot or comma.
             // Ignore "Volume:" text entirely.
             // Matches: "0.45", "Volume: 0.45", "Vol: 0,45", etc.
-            var match = out.match(/(\d+[.,]\d+)/)
-            
-            if (match) {
-                // Replace comma with dot for JS float safety
-                var valStr = match[1].replace(',', '.')
+            var matches = out.match(/(\d+[.,]\d+)/g)
+
+            if (matches && matches.length > 0) {
+                // Use the latest parsed value in case stdout accumulates
+                var valStr = matches[matches.length - 1].replace(',', '.')
                 var newVol = parseFloat(valStr)
                 
                 // Only update if valid and changed
