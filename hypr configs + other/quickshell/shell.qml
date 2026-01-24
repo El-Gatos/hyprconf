@@ -63,7 +63,10 @@ ShellRoot {
                     
                     Clock { Layout.alignment: Qt.AlignVCenter }
                     
-                    Audio { Layout.alignment: Qt.AlignVCenter }
+                    Audio { id: audioModule 
+                    Layout.alignment: Qt.AlignVCenter 
+                    }
+                    
                     Battery { Layout.alignment: Qt.AlignVCenter }
                     PowerMenu { Layout.alignment: Qt.AlignVCenter }
                 }
@@ -71,20 +74,20 @@ ShellRoot {
         }
     }
 
-    GlobalShortcut {
-        key: Qt.Key_VolumeUp
-        onActivated: audioModule.setVolume(audioModule.internalVolume + 0.05)
-    }
+            GlobalShortcut {
+                key: Qt.Key_VolumeUp
+                onPressed: audioModule.setVolume(audioModule.internalVolume + 0.05)
+            }
 
-    GlobalShortcut {
-        key: Qt.Key_VolumeDown
-        onActivated: audioModule.setVolume(audioModule.internalVolume - 0.05)
-    }
+            GlobalShortcut {
+                key: Qt.Key_VolumeDown
+                onPressed: audioModule.setVolume(audioModule.internalVolume - 0.05)
+            }
 
-    GlobalShortcut {
-        key: Qt.Key_VolumeMute
-        onActivated: audioModule.toggleMute()
-    }
+            GlobalShortcut {
+                key: Qt.Key_VolumeMute
+                onPressed: audioModule.toggleMute()
+            }
     
     WorkspaceIndicator {}
 }
