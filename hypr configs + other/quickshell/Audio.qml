@@ -37,7 +37,11 @@ Rectangle {
         command: ["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]
         onStdoutChanged: {
             var out = pollProc.stdout.toString().trim()
-            if (!out) return
+            // If wpctl returns nothing (some systems use pactl), try pactl as a fallback
+            if (!out) {
+                pollAlt.running = true
+                return
+            }
             
             // DEBUG: Uncomment this if it still fails to see what wpctl returns
             // console.log("[AudioPoll] Raw output: '" + out + "'")
@@ -62,6 +66,26 @@ Rectangle {
             
             var isMuted = out.includes("[MUTED]")
             if (root.muted !== isMuted) root.muted = isMuted
+        }
+    }
+
+    // Fallback for systems where `pactl` updates volume (e.g., PulseAudio compatibility)
+    Process {
+        id: pollAlt
+        command: ["pactl", "get-sink-volume", "@DEFAULT_SINK@"]
+        onStdoutChanged: {
+            var out = pollAlt.stdout.toString().trim()
+            if (!out) return
+
+            // Parse last percentage found, e.g. "Front Left: 65536 / 100% / 0.00 dB"
+            var matches = out.match(/(\d+)%/g)
+            if (matches && matches.length > 0) {
+                var last = matches[matches.length - 1].replace('%','')
+                var newVol = parseFloat(last) / 100.0
+                if (!isNaN(newVol) && Math.abs(newVol - root.volume) > 0.01) {
+                    root.volume = newVol
+                }
+            }
         }
     }
 
