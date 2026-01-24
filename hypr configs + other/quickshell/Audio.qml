@@ -25,90 +25,47 @@ Rectangle {
     property bool lastWrittenMute: false
     property bool muteWritten: false
     
-    // --- SYNC TIMER (The Fix for NaN/Unbound) ---
-    // Instead of binding directly to a potentially unstable C++ object,
-    // we poll the object state safely. This prevents the "Unbound" crashes.
     Timer {
-        interval: 100 // 100ms is fast enough for UI, slow enough to be safe
+        interval: 200 
         running: true
         repeat: true
-        triggeredOnStart: true
         onTriggered: {
-            // Check if sink is valid; refresh if unbound
-            if (!root.sink || !root.sink.audio) {
-                root.sink = Pipewire.defaultAudioSink;
-                root.sinkValid = false;
+            // ---------------------------------------------------------
+            // 1. HANDLE PENDING WRITES (The Shield)
+            // ---------------------------------------------------------
+            
+            // If we just clicked volume, skip reading volume this tick
+            if (root.pendingVolume >= 0) {
+                root.pendingVolume = -1; 
                 return;
             }
             
-            // Verify sink is actually bound before proceeding
-            if (root.sink.id === undefined || String(root.sink.id).includes("unbound")) {
-                console.warn("[Audio] Sink is unbound, refreshing...");
-                root.sink = Pipewire.defaultAudioSink;
-                root.sinkValid = false;
+            // If we just clicked mute, skip reading mute this tick
+            // We turn off the flag so the NEXT tick will read normally.
+            if (root.muteWritten) {
+                root.muteWritten = false;
                 return;
             }
-            
-            root.sinkValid = true;
-            
-            // Process pending writes FIRST (while sink is known-good)
-            if (root.pendingVolume >= 0 && root.sinkValid) {
-                try {
-                    root.sink.audio.volume = root.pendingVolume;
-                    root.lastWrittenVolume = root.pendingVolume;
-                    console.log("[Audio] Volume write queued:", root.pendingVolume);
-                } catch (e) {
-                    console.warn("[Audio] Failed via Quickshell, using pactl fallback:", e);
-                    root.applyVolumeViaDBus(root.pendingVolume);
+
+            // ---------------------------------------------------------
+            // 2. SYNC WITH SYSTEM
+            // ---------------------------------------------------------
+            if (root.sink && root.sink.audio) {
+                var v = root.sink.audio.volume;
+                var m = root.sink.audio.muted;
+                
+                // Only update internal state if we didn't just write to it
+                if (v !== undefined && !isNaN(v)) {
+                    root.internalVolume = v;
                 }
-                root.pendingVolume = -1;
-            }
-            
-            if (root.pendingMuteToggle && root.sinkValid) {
-                try {
-                    var oldMute = root.sink.audio.muted;
-                    var newMute = !oldMute;
-                    root.sink.audio.muted = newMute;
-                    root.lastWrittenMute = newMute;
-                    root.muteWritten = true;
-                    console.log("[Audio] Mute toggle queued: was", oldMute, "now", newMute);
-                    root.skipNextMuteRead = true;
-                } catch (e) {
-                    console.warn("[Audio] Failed via Quickshell, using pactl fallback:", e);
-                    root.applyMuteViaDBus(!root.lastWrittenMute);
-                    root.lastWrittenMute = !root.lastWrittenMute;
-                    root.muteWritten = true;
+                
+                // CRITICAL: Only update mute if the system actually disagrees
+                if (m !== undefined) {
+                    root.internalMuted = m;
                 }
-                root.pendingMuteToggle = false;
+            } else {
+                root.sink = Pipewire.defaultAudioSink;
             }
-            
-            // Delay read by one tick to let Pipewire settle
-            if (root.writeRetries > 0) {
-                root.writeRetries--;
-                return; // Skip read this tick
-            }
-            
-            // Safe Read - but trust our writes over Pipewire's feedback
-            var v = root.sink.audio.volume;
-            var m = root.sink.audio.muted;
-            
-            // Only update volume if we haven't written one this cycle
-            if (root.pendingVolume < 0 && v !== undefined && !isNaN(v)) {
-                root.internalVolume = v;
-                root.lastWrittenVolume = v;
-            }
-            
-            // Only update mute if we haven't just written it
-            if (!root.muteWritten && !root.skipNextMuteRead && m !== undefined) {
-                root.internalMuted = m;
-                root.lastWrittenMute = m;
-            } else if (root.skipNextMuteRead) {
-                // Skip this read, but next time show the written value
-                root.internalMuted = root.lastWrittenMute;
-            }
-            
-            root.skipNextMuteRead = false;
-            root.muteWritten = false;
         }
     }
     
@@ -126,31 +83,38 @@ Rectangle {
         if (safeVal > 1.0) safeVal = 1.0;
         if (safeVal < 0.0) safeVal = 0.0;
         
-        // 2. Optimistic Update (Visuals update instantly)
+        // 2. Visual Update (Instant feedback)
         root.internalVolume = safeVal;
-
-        // 3. Queue Write (Timer will apply it when sink is known-good)
-        root.pendingVolume = safeVal;
+        
+        // 3. NUCLEAR OPTION: Direct System Call
+        // We bypass the Quickshell object entirely for writing.
+        root.applyVolumeViaDBus(safeVal);
+        
+        // Disable the read timer for a moment so the bar doesn't jitter
+        root.pendingVolume = safeVal; 
     }
 
     function toggleMute() {
-        // Optimistic Update
+        // 1. Visual Update
         root.internalMuted = !root.internalMuted;
         
-        // Queue Write (Timer will apply it)
-        root.pendingMuteToggle = true;
+        // 2. Direct System Call
+        root.applyMuteViaDBus(root.internalMuted);
+        
+        // 3. Set the "Ignore" flag
+        // This tells the Timer: "Don't trust the system for a moment, I just changed it."
+        root.muteWritten = true;
     }
     
-    // Fallback: use pactl to actually change volume if Quickshell binding fails
     function applyVolumeViaDBus(volume) {
         var percent = Math.round(volume * 100);
-        Quickshell.execute(["pactl", "set-sink-volume", "@DEFAULT_SINK@", percent + "%"], false);
-        console.log("[Audio] Applied volume via pactl:", percent + "%");
+        // FORCE PACTL: This talks directly to the audio server
+        Quickshell.execute(["pactl", "set-sink-volume", "@DEFAULT_SINK@", percent + "%"]);
+        console.log("[Audio] Forcing write via pactl:", percent + "%");
     }
-    
+
     function applyMuteViaDBus(mute) {
-        Quickshell.execute(["pactl", "set-sink-mute", "@DEFAULT_SINK@", mute ? "1" : "0"], false);
-        console.log("[Audio] Applied mute via pactl:", mute);
+        Quickshell.execute(["pactl", "set-sink-mute", "@DEFAULT_SINK@", mute ? "1" : "0"]);
     }
     
     // --- UI CONFIGURATION ---
