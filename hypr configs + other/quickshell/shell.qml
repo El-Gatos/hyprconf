@@ -5,7 +5,6 @@ import Quickshell.Hyprland
 import QtQuick.Layouts
 
 ShellRoot {
-    // Global wallpaper handling
     Background {}
 
     Variants {
@@ -72,7 +71,6 @@ ShellRoot {
                 }
             }
 
-            // Global shortcuts scoped to this panel for reliable access to audioModule
             GlobalShortcut {
                 name: "vol_up"
                 onPressed: audioModule.setVolume(audioModule.internalVolume + 0.05)
