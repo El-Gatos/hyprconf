@@ -15,62 +15,102 @@ ShellRoot {
             property var modelData
             screen: modelData
             
+            // Anchor to the left edge of the screen
             anchors {
                 top: true
+                bottom: true
                 left: true
-                right: true
+                right: false
             }
             
-            implicitHeight: 60 
+            // Total width of the dock area (includes transparency/margins)
+            implicitWidth: barBackground.implicitWidth + 16
             
             color: "transparent"
             
+            // Mask allows clicks to pass through transparent areas if needed
             mask: Region { item: barBackground }
 
             Rectangle {
                 id: barBackground
-                
-                anchors.top: parent.top
-                anchors.topMargin: 8
-                
-                anchors.left: parent.left
-                anchors.leftMargin: 12
-                anchors.right: parent.right
-                anchors.rightMargin: 12
-                
-                height: 44
-                
+
+                // Float a compact bar rather than stretching the full height
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
+
+                width: 44
+                implicitHeight: mainLayout.implicitHeight + 16
                 radius: 12
                 
                 color: "#cc1a2847"
                 border.width: 2
                 border.color: "#4Dff6b9d"
                 
-                RowLayout {
+                ColumnLayout {
                     id: mainLayout
-                    
-                    anchors.centerIn: parent 
+                    anchors.fill: parent
+                    anchors.margins: 8
                     
                     spacing: 12
                     
-                    Launcher { Layout.alignment: Qt.AlignVCenter }
+                    // --- TOP SECTION ---
+                    Launcher { Layout.alignment: Qt.AlignHCenter }
                     
                     Workspaces {
                         screen: panel.modelData
-                        Layout.alignment: Qt.AlignVCenter
+                        Layout.alignment: Qt.AlignHCenter
                     }
                     
-                    Clock { Layout.alignment: Qt.AlignVCenter }
+                    // --- MIDDLE SECTION (Title) ---
+                    // Spacer
+                    Item { Layout.fillHeight: true; Layout.minimumHeight: 12 }
                     
-                    Audio { id: audioModule 
-                    Layout.alignment: Qt.AlignVCenter 
+                    // Rotated Title Wrapper
+                    // This container tells the layout the correct VERTICAL dimensions
+                    // so the text doesn't overlap or drift.
+                    Item {
+                        Layout.alignment: Qt.AlignHCenter
+                        // Visual width is the component's height (32)
+                        implicitWidth: 32 
+                        // Visual height is the component's width (max 400)
+                        implicitHeight: titleComp.implicitWidth
+                        
+                        WindowTitle { 
+                            id: titleComp
+                            anchors.centerIn: parent
+                            rotation: -90
+                        }
                     }
                     
-                    Battery { Layout.alignment: Qt.AlignVCenter }
-                    PowerMenu { Layout.alignment: Qt.AlignVCenter }
+                    // Spacer
+                    Item { Layout.fillHeight: true; Layout.minimumHeight: 12 }
+                    
+                    // --- BOTTOM SECTION ---
+                    Audio { 
+                        id: audioModule 
+                        Layout.alignment: Qt.AlignHCenter 
+                    }
+                    
+                    Battery { Layout.alignment: Qt.AlignHCenter }
+                    
+                    // Rotated Clock Wrapper
+                    Item {
+                        Layout.alignment: Qt.AlignHCenter
+                        implicitWidth: 32
+                        implicitHeight: clockComp.implicitWidth
+                        
+                        Clock { 
+                            id: clockComp 
+                            anchors.centerIn: parent
+                            rotation: -90
+                        }
+                    }
+                    
+                    PowerMenu { Layout.alignment: Qt.AlignHCenter }
                 }
             }
 
+            // Shortcuts
             GlobalShortcut {
                 name: "vol_up"
                 onPressed: audioModule.setVolume(audioModule.internalVolume + 0.05)

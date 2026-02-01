@@ -6,6 +6,7 @@ import Quickshell.Io
 Rectangle {
     id: root
     
+    // --- SAME LOGIC AS YOUR FIX ---
     property var sink: Pipewire.defaultAudioSink
     property bool sinkValid: false
     property real internalVolume: 0.0
@@ -82,7 +83,6 @@ Rectangle {
     property bool dragging: mouseArea.pressed
     property bool isActive: hovered || dragging
 
-
     function setVolume(val) {
         var safeVal = val;
         if (safeVal > 1.0) safeVal = 1.0;
@@ -122,42 +122,52 @@ Rectangle {
         muteSetter.running = true;
     }
     
-    implicitWidth: width
-    implicitHeight: 32
-    width: isActive ? 150 : 32
-    height: 32
+    // --- UI UI UPDATES FOR VERTICAL ---
+    
+    // Width is fixed, Height expands
+    implicitWidth: 32
+    implicitHeight: width
+    
+    width: 32
+    height: isActive ? 150 : 32
+    
     radius: 16
     clip: true
     color: "#B31a2847"
     border.width: 2
     border.color: isActive ? "#66ff6b9d" : "#4Dff6b9d"
     
-    Behavior on width { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
+    // Animate Height instead of Width
+    Behavior on height { NumberAnimation { duration: 300; easing.type: Easing.OutCubic } }
     Behavior on border.color { ColorAnimation { duration: 200 } }
-
 
     Rectangle {
         id: volBar
+        // Anchor to bottom so it grows UP
         anchors.left: parent.left
-        anchors.top: parent.top
+        anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 2
         radius: 14
         z: 0
-        width: {
-            var maxW = parent.width - 4;
-            var calc = maxW * root.internalVolume;
+        
+        // Calculate Height based on Volume
+        height: {
+            var maxH = parent.height - 4;
+            var calc = maxH * root.internalVolume;
             return Math.max(0, calc);
         }
         
         opacity: root.isActive ? 0.8 : 0
         
+        // Vertical Gradient
         gradient: Gradient {
-            GradientStop { position: 0.0; color: "#ff6b9d" }
-            GradientStop { position: 1.0; color: "#4dd0e1" }
+            orientation: Gradient.Vertical
+            GradientStop { position: 1.0; color: "#ff6b9d" } // Bottom
+            GradientStop { position: 0.0; color: "#4dd0e1" } // Top
         }
         
-        Behavior on width {
+        Behavior on height {
             enabled: !root.dragging
             NumberAnimation { duration: 200; easing.type: Easing.OutCubic }
         }
@@ -169,8 +179,10 @@ Rectangle {
         width: 32
         height: 32
         z: 1
+        // Icon stays at the bottom in vertical mode usually, or top?
+        // Let's put it at the Bottom to match the "grow up" bar base
         anchors.left: parent.left
-        anchors.top: parent.top
+        anchors.bottom: parent.bottom
         
         Text {
             anchors.centerIn: parent
@@ -188,13 +200,14 @@ Rectangle {
 
     Text {
         z: 1
-        anchors.right: parent.right
-        anchors.rightMargin: 12
-        anchors.verticalCenter: parent.verticalCenter
+        // Put text at top
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: 8
         
         text: Math.round(root.internalVolume * 100) + "%"
         font.family: "JetBrainsMono Nerd Font"
-        font.pixelSize: 12
+        font.pixelSize: 10
         font.bold: true
         color: "#ffffff"
         style: Text.Outline; styleColor: "#1a2847"
@@ -211,7 +224,12 @@ Rectangle {
         acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
         
         function handleMouse(mouse) {
-            var pct = mouse.x / width;
+            // Vertical calculation:
+            // 0 at bottom, Height at top.
+            // Mouse Y is 0 at top.
+            // So Pct = 1.0 - (mouse.y / height)
+            var pct = 1.0 - (mouse.y / height);
+            
             if (pct < 0) pct = 0; 
             if (pct > 1) pct = 1.0; 
             root.setVolume(pct);

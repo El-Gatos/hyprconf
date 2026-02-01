@@ -8,9 +8,6 @@ Rectangle {
     id: workspacesContainer
     
     required property var screen
-    
-    // FIX 1: Make monitor detection "sticky" so it doesn't break if grimblast steals focus.
-    // We bind to the name, which is constant.
     property string monitorName: screen.name
     
     property var monitor: {
@@ -29,16 +26,17 @@ Rectangle {
     
     property int totalWorkspaces: 10
     property int visibleCount: 5
-    property int itemWidth: 32
-    property int itemHeight: 24
     
-    // Spacing between numbers
+    // SWAPPED: Width/Height for vertical layout
+    property int itemWidth: 24
+    property int itemHeight: 32
     property int spacing: 6
 
-    implicitWidth: (itemWidth * visibleCount) + (spacing * (visibleCount - 1)) + 16
-    height: 32
-    radius: 10
+    // Vertical Calculation
+    implicitWidth: 32
+    implicitHeight: (itemHeight * visibleCount) + (spacing * (visibleCount - 1)) + 16
     
+    radius: 10
     color: "#B31a2847"
     border.width: 2
     border.color: "#4Dff6b9d"
@@ -48,26 +46,24 @@ Rectangle {
     ListView {
         id: workspaceList
         
-        // FIX 2: Layout Fix
-        // Instead of 'fill: parent' (which applies vertical margins and squashes the list),
-        // we center it vertically and only pin the left/right edges.
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        anchors.leftMargin: 8
-        anchors.rightMargin: 8
+        // Vertical Anchoring
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.topMargin: 8
+        anchors.bottomMargin: 8
         
-        // Explicitly set height to the item height so it doesn't get crushed
-        height: itemHeight
+        width: itemWidth
         
-        orientation: ListView.Horizontal
+        // Changed to Vertical
+        orientation: ListView.Vertical
         spacing: workspacesContainer.spacing
         
         highlightMoveDuration: 450
         highlightMoveVelocity: -1 
         highlightRangeMode: ListView.ApplyRange
-        preferredHighlightBegin: (width - itemWidth) / 2
-        preferredHighlightEnd: (width - itemWidth) / 2 + itemWidth
+        preferredHighlightBegin: (height - itemHeight) / 2
+        preferredHighlightEnd: (height - itemHeight) / 2 + itemHeight
         boundsBehavior: Flickable.StopAtBounds
         
         currentIndex: activeWorkspaceId - 1 

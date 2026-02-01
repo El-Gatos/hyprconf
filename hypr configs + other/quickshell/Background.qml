@@ -30,7 +30,7 @@ Variants {
         Image {
             anchors.fill: parent
             // Ensure this path is correct and absolute
-            source: "/home/misty/Pictures/Wallpapers/vaporwave-cassette.jpg"
+            source: "/home/misty/Pictures/Wallpapers/dark-forest.jpg"
             fillMode: Image.PreserveAspectCrop
             smooth: true
         }
